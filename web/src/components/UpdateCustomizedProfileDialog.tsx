@@ -1,90 +1,100 @@
-import { useEffect, useState } from "react";
-import { useTranslation } from "react-i18next";
-import { useGlobalStore } from "../store/module";
-import * as api from "../helpers/api";
-import Icon from "./Icon";
-import { generateDialog } from "./Dialog";
-import toastHelper from "./Toast";
-import LocaleSelect from "./LocaleSelect";
+import Textarea from "@mui/joy/Textarea/Textarea";
+import { Button, Input } from "@usememos/mui";
+import { XIcon } from "lucide-react";
+import { useState } from "react";
+import { toast } from "react-hot-toast";
+import { workspaceSettingNamePrefix, useWorkspaceSettingStore } from "@/store/v1";
+import { WorkspaceCustomProfile, WorkspaceGeneralSetting } from "@/types/proto/api/v1/workspace_setting_service";
+import { WorkspaceSettingKey } from "@/types/proto/store/workspace_setting";
+import { useTranslate } from "@/utils/i18n";
 import AppearanceSelect from "./AppearanceSelect";
+import { generateDialog } from "./Dialog";
+import LocaleSelect from "./LocaleSelect";
 
 type Props = DialogProps;
 
 const UpdateCustomizedProfileDialog: React.FC<Props> = ({ destroy }: Props) => {
-  const { t } = useTranslation();
-  const globalStore = useGlobalStore();
-  const [state, setState] = useState<CustomizedProfile>(globalStore.state.systemStatus.customizedProfile);
+  const t = useTranslate();
+  const workspaceSettingStore = useWorkspaceSettingStore();
+  const workspaceGeneralSetting = WorkspaceGeneralSetting.fromPartial(
+    workspaceSettingStore.getWorkspaceSettingByKey(WorkspaceSettingKey.GENERAL)?.generalSetting || {},
+  );
+  const [customProfile, setCustomProfile] = useState<WorkspaceCustomProfile>(
+    WorkspaceCustomProfile.fromPartial(workspaceGeneralSetting.customProfile || {}),
+  );
 
-  useEffect(() => {
-    // do nth
-  }, []);
-
-  const handleCloseBtnClick = () => {
+  const handleCloseButtonClick = () => {
     destroy();
   };
 
-  const handleNameChanged = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setState((state) => {
+  const setPartialState = (partialState: Partial<WorkspaceCustomProfile>) => {
+    setCustomProfile((state) => {
       return {
         ...state,
-        name: e.target.value as string,
+        ...partialState,
       };
+    });
+  };
+
+  const handleNameChanged = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setPartialState({
+      title: e.target.value as string,
     });
   };
 
   const handleLogoUrlChanged = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setState((state) => {
-      return {
-        ...state,
-        logoUrl: e.target.value as string,
-      };
+    setPartialState({
+      logoUrl: e.target.value as string,
     });
   };
 
-  const handleDescriptionChanged = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setState((state) => {
-      return {
-        ...state,
-        description: e.target.value as string,
-      };
+  const handleDescriptionChanged = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setPartialState({
+      description: e.target.value as string,
     });
   };
 
   const handleLocaleSelectChange = (locale: Locale) => {
-    setState((state) => {
-      return {
-        ...state,
-        locale: locale,
-      };
+    setPartialState({
+      locale: locale,
     });
   };
 
   const handleAppearanceSelectChange = (appearance: Appearance) => {
-    setState((state) => {
-      return {
-        ...state,
-        appearance: appearance,
-      };
+    setPartialState({
+      appearance: appearance,
     });
   };
 
-  const handleSaveBtnClick = async () => {
-    if (state.name === "" || state.logoUrl === "") {
-      toastHelper.error(t("message.fill-all"));
+  const handleRestoreButtonClick = () => {
+    setPartialState({
+      title: "Memos",
+      logoUrl: "/logo.webp",
+      description: "",
+      locale: "en",
+      appearance: "system",
+    });
+  };
+
+  const handleSaveButtonClick = async () => {
+    if (customProfile.title === "") {
+      toast.error("Title cannot be empty.");
       return;
     }
 
     try {
-      await api.upsertSystemSetting({
-        name: "customizedProfile",
-        value: JSON.stringify(state),
+      await workspaceSettingStore.setWorkspaceSetting({
+        name: `${workspaceSettingNamePrefix}${WorkspaceSettingKey.GENERAL}`,
+        generalSetting: {
+          ...workspaceGeneralSetting,
+          customProfile: customProfile,
+        },
       });
-      await globalStore.fetchSystemStatus();
     } catch (error) {
       console.error(error);
       return;
     }
-    toastHelper.success(t("message.succeed-update-customized-profile"));
+    toast.success(t("message.update-succeed"));
     destroy();
   };
 
@@ -92,31 +102,35 @@ const UpdateCustomizedProfileDialog: React.FC<Props> = ({ destroy }: Props) => {
     <>
       <div className="dialog-header-container">
         <p className="title-text">{t("setting.system-section.customize-server.title")}</p>
-        <button className="btn close-btn" onClick={handleCloseBtnClick}>
-          <Icon.X />
-        </button>
+        <Button size="sm" variant="plain" onClick={handleCloseButtonClick}>
+          <XIcon className="w-5 h-auto" />
+        </Button>
       </div>
-      <div className="dialog-content-container !w-80">
-        <p className="text-sm mb-1">
-          {t("setting.system-section.server-name")}
-          <span className="text-sm text-gray-400 ml-1">({t("setting.system-section.customize-server.default")})</span>
-        </p>
-        <input type="text" className="input-text" value={state.name} onChange={handleNameChanged} />
+      <div className="dialog-content-container min-w-[16rem]">
+        <p className="text-sm mb-1">{t("setting.system-section.server-name")}</p>
+        <Input className="w-full" type="text" value={customProfile.title} onChange={handleNameChanged} />
         <p className="text-sm mb-1 mt-2">{t("setting.system-section.customize-server.icon-url")}</p>
-        <input type="text" className="input-text" value={state.logoUrl} onChange={handleLogoUrlChanged} />
-        <p className="text-sm mb-1 mt-2">Description</p>
-        <input type="text" className="input-text" value={state.description} onChange={handleDescriptionChanged} />
-        <p className="text-sm mb-1 mt-2">Server locale</p>
-        <LocaleSelect className="w-full" value={state.locale} onChange={handleLocaleSelectChange} />
-        <p className="text-sm mb-1 mt-2">Server appearance</p>
-        <AppearanceSelect className="w-full" value={state.appearance} onChange={handleAppearanceSelectChange} />
-        <div className="mt-4 w-full flex flex-row justify-end items-center space-x-2">
-          <span className="btn-text" onClick={handleCloseBtnClick}>
-            {t("common.cancel")}
-          </span>
-          <span className="btn-primary" onClick={handleSaveBtnClick}>
-            {t("common.save")}
-          </span>
+        <Input className="w-full" type="text" value={customProfile.logoUrl} onChange={handleLogoUrlChanged} />
+        <p className="text-sm mb-1 mt-2">{t("setting.system-section.customize-server.description")}</p>
+        <Textarea className="w-full" minRows="2" maxRows="4" value={customProfile.description} onChange={handleDescriptionChanged} />
+        <p className="text-sm mb-1 mt-2">{t("setting.system-section.customize-server.locale")}</p>
+        <LocaleSelect className="!w-full" value={customProfile.locale} onChange={handleLocaleSelectChange} />
+        <p className="text-sm mb-1 mt-2">{t("setting.system-section.customize-server.appearance")}</p>
+        <AppearanceSelect className="!w-full" value={customProfile.appearance as Appearance} onChange={handleAppearanceSelectChange} />
+        <div className="mt-4 w-full flex flex-row justify-between items-center space-x-2">
+          <div className="flex flex-row justify-start items-center">
+            <Button variant="outlined" onClick={handleRestoreButtonClick}>
+              {t("common.restore")}
+            </Button>
+          </div>
+          <div className="flex flex-row justify-end items-center gap-2">
+            <Button variant="plain" onClick={handleCloseButtonClick}>
+              {t("common.cancel")}
+            </Button>
+            <Button color="primary" onClick={handleSaveButtonClick}>
+              {t("common.save")}
+            </Button>
+          </div>
         </div>
       </div>
     </>
@@ -129,7 +143,7 @@ function showUpdateCustomizedProfileDialog() {
       className: "update-customized-profile-dialog",
       dialogName: "update-customized-profile-dialog",
     },
-    UpdateCustomizedProfileDialog
+    UpdateCustomizedProfileDialog,
   );
 }
 
